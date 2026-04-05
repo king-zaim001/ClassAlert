@@ -6,7 +6,7 @@ import time as tm
 import asyncio
 import os
 import flet_permission_handler as fph
-
+from plyer import tts
 
 
 
@@ -425,6 +425,12 @@ We appreciate your feedback and look forward to improving the experience for eve
                     print(f"Skipping malformed alert entry: {raw_line}")
 
         return records
+    
+    def TextToSpeech(self, message: str):
+        try:
+            tts.speak(message=message)
+        except Exception as e:
+            print(f"TTS error: {e}")
 
     def _save_alert_records(self, records):
         with open("alerts.txt", "w") as f:
@@ -661,6 +667,8 @@ We appreciate your feedback and look forward to improving the experience for eve
                 test,
                 "If you see this, notifications are working!",
             )
+            
+            self.TextToSpeech("This is a test notification. If you see this, notifications are working!")
             self.page.show_dialog(ft.SnackBar(
                 content=ft.Text(
                     "Test sent! Check your notification tray." if sent else "Test failed. Check Android notification settings."
@@ -669,6 +677,8 @@ We appreciate your feedback and look forward to improving the experience for eve
             ))
             print(f"Test notification sent: {sent}")
         except Exception as e:
+            
+            self.TextToSpeech("Error scheduling test notification")
             self.page.show_dialog(ft.SnackBar(
                 content=ft.Text(f"Error scheduling test notification: {e}"),
                 bgcolor=ft.Colors.RED_400,
@@ -767,6 +777,8 @@ We appreciate your feedback and look forward to improving the experience for eve
                         )
                         self._send_notification_with_fallback(notif, f"Grade: {grade}")
                         self._show_class_dialog(day_name, current_time_str, subject, grade)
+                        
+                        self.TextToSpeech(f"Your {subject} class for {grade} is starting now.")
 
                     container = ft.Container(
                         padding=ft.Padding.all(10),
