@@ -5,6 +5,7 @@ from android_notify import Notification, NotificationHandler
 import time as tm
 import asyncio
 import os
+import json
 import flet_permission_handler as fph
 #from jnius import autoclass
 
@@ -13,17 +14,26 @@ import flet_permission_handler as fph
 class ClassAlert:
     ALARM_CHANNEL_ID = "class_alerts"
     ALARM_CHANNEL_NAME = "Class Reminders"
+    THEME_PREF_KEY = "ui.theme_mode"
+    SETTINGS_FILE = "settings.json"
+    ALL_CLASSES_FILTER = "All Classes"
 
     def __init__(self, page: ft.Page):
         self.page = page
         self._last_handled_alarm_signature = None
         self.page.scroll = ft.ScrollMode.HIDDEN
-        self.page.theme_mode = ft.ThemeMode.LIGHT
+        self.page.theme_mode = self._load_theme_mode()
 
         def handle_switch_change(e: ft.Event[ft.Switch]):
                 self.page.theme_mode = ft.ThemeMode.DARK if e.control.value else ft.ThemeMode.LIGHT
-                
+                self._save_theme_mode(self.page.theme_mode)
                 self.page.update()
+
+        self.theme_switch = ft.Switch(
+            value=self.page.theme_mode == ft.ThemeMode.DARK,
+            on_change=handle_switch_change,
+            height=30,
+        )
 
         self.page.appbar = ft.AppBar(
             title=ft.Text("Class Alert", size=30, weight=ft.FontWeight.BOLD),
@@ -39,7 +49,7 @@ class ClassAlert:
                      
 
                 ),
-                ft.Switch(on_change=handle_switch_change, height=30),
+                self.theme_switch,
                 
             ]
         )
@@ -126,8 +136,10 @@ We appreciate your feedback and look forward to improving the experience for eve
 
         async def add_func(e):
                 date_str = self.date.value or "Monday"
+                grade = self._get_class_name_input()
+                subject = (self.subject_name.value or "").strip()
 
-                if not self.subject_name.value or not self.class_name.value or self.time_pick.value is None:
+                if not subject or not grade or self.time_pick.value is None:
                     self.page.show_dialog(ft.SnackBar(
                         content=ft.Text("Please fill in class, subject, and time before adding."),
                         bgcolor=ft.Colors.RED_400,
@@ -137,8 +149,6 @@ We appreciate your feedback and look forward to improving the experience for eve
                 self._refresh_id_counter()
                 self.id_counter += 1
                 nt_id = self.id_counter
-                subject = self.subject_name.value
-                grade = self.class_name.value
                 time_str = self.time_pick.value.strftime("%H:%M")
                 dt_str = f"{date_str} {time_str}"
                 class_time = next_weekday(date_str, self.time_pick.value)
@@ -158,8 +168,8 @@ We appreciate your feedback and look forward to improving the experience for eve
                     controls=[
                         ft.Column(
                             controls=[
-                                ft.Text(f"Class: {self.class_name.value}", size=15, weight=ft.FontWeight.BOLD),
-                                ft.Text(f"Subject: {self.subject_name.value}", size=15, weight=ft.FontWeight.NORMAL),
+                                ft.Text(f"Class: {grade}", size=15, weight=ft.FontWeight.BOLD),
+                                ft.Text(f"Subject: {subject}", size=15, weight=ft.FontWeight.NORMAL),
                                 ft.Text(f"Date: {self.date.value}", size=15, weight=ft.FontWeight.NORMAL),
                                 ft.Text(f"Time: {self.time_pick.value}", size=15, weight=ft.FontWeight.NORMAL),
                             ],
@@ -186,7 +196,8 @@ We appreciate your feedback and look forward to improving the experience for eve
                     grade,
                     class_time=class_time,
                     reminder_before=reminder_minutes,
-                )    
+                )
+                await self.readtimetable()
                 
         
         
@@ -212,7 +223,14 @@ We appreciate your feedback and look forward to improving the experience for eve
             help_text="Select the time for the class.",
             on_change=lambda _: setattr(self.time_text, "value", f"Select Time: {self.time_pick.value}")
             )
-        self.class_name = ft.TextField(label="Class Name", width=200, hint_text="e.g., Grade 10A")
+        self.class_name = ft.Dropdown(
+            label="Class Name",
+            width=200,
+            hint_text="Type or select class (e.g., Grade 10A)",
+            editable=True,
+            enable_search=True,
+            options=[],
+        )
 
         self.btntime = ft.Button(
             content=ft.Text("Pick Time"),
@@ -357,6 +375,14 @@ We appreciate your feedback and look forward to improving the experience for eve
             scroll=ft.ScrollMode.HIDDEN
             
         )
+
+        self.class_filter = ft.Dropdown(
+            label="Filter by class",
+            value=self.ALL_CLASSES_FILTER,
+            options=[ft.dropdown.Option(self.ALL_CLASSES_FILTER)],
+            on_select=lambda _: asyncio.create_task(self.readtimetable()),
+            width=220,
+        )
         
         asyncio.create_task(self.request_permission())
         asyncio.create_task(self.readtimetable())
@@ -374,6 +400,10 @@ We appreciate your feedback and look forward to improving the experience for eve
                 alignment=ft.MainAxisAlignment.CENTER,
             ),
             ft.Row(
+                controls=[self.class_filter],
+                alignment=ft.MainAxisAlignment.START,
+            ),
+            ft.Row(
                 controls=[self.list_timetable,],
                 alignment=ft.MainAxisAlignment.CENTER,
             )
@@ -384,6 +414,79 @@ We appreciate your feedback and look forward to improving the experience for eve
         if records is None:
             records = self._load_alert_records()
         self.id_counter = max((record["id"] for record in records), default=0)
+
+    def _load_theme_mode(self) -> ft.ThemeMode:
+        settings = self._load_settings()
+        saved = settings.get(self.THEME_PREF_KEY, "light")
+        if str(saved).lower() == "dark":
+            return ft.ThemeMode.DARK
+        return ft.ThemeMode.LIGHT
+
+    def _save_theme_mode(self, mode: ft.ThemeMode):
+        settings = self._load_settings()
+        settings[self.THEME_PREF_KEY] = "dark" if mode == ft.ThemeMode.DARK else "light"
+        self._save_settings(settings)
+
+    def _load_settings(self) -> dict:
+        if not os.path.exists(self.SETTINGS_FILE):
+            return {}
+
+        try:
+            with open(self.SETTINGS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data if isinstance(data, dict) else {}
+        except Exception as e:
+            print(f"Failed to load settings: {e}")
+            return {}
+
+    def _save_settings(self, settings: dict):
+        try:
+            with open(self.SETTINGS_FILE, "w", encoding="utf-8") as f:
+                json.dump(settings, f)
+        except Exception as e:
+            print(f"Failed to save settings: {e}")
+
+    def _get_class_name_input(self) -> str:
+        value = getattr(self.class_name, "value", None)
+        if value:
+            return str(value).strip()
+
+        text = getattr(self.class_name, "text", None)
+        if text:
+            return str(text).strip()
+
+        return ""
+
+    def _selected_class_filter(self) -> str:
+        return self.class_filter.value or self.ALL_CLASSES_FILTER
+
+    def _passes_class_filter(self, grade: str) -> bool:
+        selected = self._selected_class_filter()
+        if selected == self.ALL_CLASSES_FILTER:
+            return True
+        return grade == selected
+
+    def _update_class_filter_options(self, records: list[dict]):
+        classes = self._get_class_names(records)
+        options = [ft.dropdown.Option(self.ALL_CLASSES_FILTER)] + [
+            ft.dropdown.Option(class_name) for class_name in classes
+        ]
+        self.class_filter.options = options
+
+        selected = self._selected_class_filter()
+        valid_values = {self.ALL_CLASSES_FILTER, *classes}
+        if selected not in valid_values:
+            self.class_filter.value = self.ALL_CLASSES_FILTER
+
+    def _get_class_names(self, records: list[dict]) -> list[str]:
+        return sorted({record["grade"] for record in records if record.get("grade")})
+
+    def _update_class_name_options(self, records: list[dict]):
+        classes = self._get_class_names(records)
+        current_input = self._get_class_name_input()
+        self.class_name.options = [ft.dropdown.Option(class_name) for class_name in classes]
+        if current_input and current_input in classes:
+            self.class_name.value = current_input
 
     def _load_alert_records(self):
         records = []
@@ -720,6 +823,8 @@ We appreciate your feedback and look forward to improving the experience for eve
             self._refresh_id_counter(records)
 
             self.list_timetable.controls.remove(cont)
+            self._update_class_filter_options(records)
+            self._update_class_name_options(records)
 
             try:
                 from flet_alarm import FletAlarm
@@ -745,6 +850,8 @@ We appreciate your feedback and look forward to improving the experience for eve
 
             records = self._load_alert_records()
             self._refresh_id_counter(records)
+            self._update_class_filter_options(records)
+            self._update_class_name_options(records)
 
             if records:
                 normalized = False
@@ -776,6 +883,14 @@ We appreciate your feedback and look forward to improving the experience for eve
                         self._show_class_dialog(day_name, current_time_str, subject, grade)
                         
                         #self.TextToSpeech(f"Your {subject} class for {grade} is starting now.")
+
+                    try:
+                        self._schedule_exact_alarm(nt_id, schld_time, subject, grade)
+                    except Exception as alarm_error:
+                        print(f"Alarm restore unavailable: {alarm_error}")
+
+                    if not self._passes_class_filter(grade):
+                        continue
 
                     container = ft.Container(
                         padding=ft.Padding.all(10),
@@ -814,10 +929,6 @@ We appreciate your feedback and look forward to improving the experience for eve
                     )
 
                     self.list_timetable.controls.append(container)
-                    try:
-                        self._schedule_exact_alarm(nt_id, schld_time, subject, grade)
-                    except Exception as alarm_error:
-                        print(f"Alarm restore unavailable: {alarm_error}")
 
                 if normalized:
                     self._save_alert_records(records)
