@@ -6,7 +6,7 @@ import time as tm
 import asyncio
 import os
 import flet_permission_handler as fph
-from plyer import tts
+from jnius import autoclass
 
 
 
@@ -427,8 +427,14 @@ We appreciate your feedback and look forward to improving the experience for eve
         return records
     
     def TextToSpeech(self, message: str):
+        Locale = autoclass('java.util.Locale')
+        PythonActivity = autoclass('org.kivy.android.PythonActivity')
+        TextToSpeech = autoclass('android.speech.tts.TextToSpeech')
+        tts = TextToSpeech(PythonActivity.mActivity, None)
         try:
-            tts.speak(message=message)
+            tts.setLanguage(Locale.US)
+            tts.speak(message, TextToSpeech.QUEUE_FLUSH, None)
+            
         except Exception as e:
             print(f"TTS error: {e}")
 
@@ -678,7 +684,7 @@ We appreciate your feedback and look forward to improving the experience for eve
             print(f"Test notification sent: {sent}")
         except Exception as e:
             
-            self.TextToSpeech("Error scheduling test notification")
+            #self.TextToSpeech("Error scheduling test notification")
             self.page.show_dialog(ft.SnackBar(
                 content=ft.Text(f"Error scheduling test notification: {e}"),
                 bgcolor=ft.Colors.RED_400,
