@@ -40,3 +40,15 @@ path = "src"
 "android.permission.RECEIVE_BOOT_COMPLETED" = true
 "android.permission.SYSTEM_ALERT_WINDOW" = true
 
+[tool.flet.splash]
+color = "#ffffff"
+dark_color = "#1B6911"
+
+[tool.flet.app.boot_screen]     # or [tool.flet.<PLATFORM>.app.boot_screen]
+show = true
+message = "Preparing the app ….."
+
+[tool.flet.app.startup_screen]      # or [tool.flet.<PLATFORM>.app.startup_screen]
+show = true
+message = "LOADING…"
+
