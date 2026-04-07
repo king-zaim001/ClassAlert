@@ -137,7 +137,7 @@ We appreciate your feedback and look forward to improving the experience for eve
         async def add_func(e):
                 date_str = self.date.value or "Monday"
                 grade = self._get_class_name_input()
-                subject = (self.subject_name.value or "").strip()
+                subject = self._get_subject_input()
 
                 if not subject or not grade or self.time_pick.value is None:
                     self.page.show_dialog(ft.SnackBar(
@@ -202,7 +202,14 @@ We appreciate your feedback and look forward to improving the experience for eve
         
         
 
-        self.subject_name = ft.TextField(label="Subject Name", width=200, hint_text="e.g., Mathematics")
+        self.subject_name = ft.Dropdown(
+            label="Subject Name",
+            width=200,
+            hint_text="Type or select subject (e.g., Mathematics)",
+            editable=True,
+            enable_search=True,
+            options=[],
+        )
         self.date = ft.Dropdown(
             label="Day",
             options=[
@@ -457,6 +464,17 @@ We appreciate your feedback and look forward to improving the experience for eve
 
         return ""
 
+    def _get_subject_input(self) -> str:
+        value = getattr(self.subject_name, "value", None)
+        if value:
+            return str(value).strip()
+
+        text = getattr(self.subject_name, "text", None)
+        if text:
+            return str(text).strip()
+
+        return ""
+
     def _selected_class_filter(self) -> str:
         return self.class_filter.value or self.ALL_CLASSES_FILTER
 
@@ -487,6 +505,16 @@ We appreciate your feedback and look forward to improving the experience for eve
         self.class_name.options = [ft.dropdown.Option(class_name) for class_name in classes]
         if current_input and current_input in classes:
             self.class_name.value = current_input
+
+    def _get_subject_names(self, records: list[dict]) -> list[str]:
+        return sorted({record["subject"] for record in records if record.get("subject")})
+
+    def _update_subject_options(self, records: list[dict]):
+        subjects = self._get_subject_names(records)
+        current_input = self._get_subject_input()
+        self.subject_name.options = [ft.dropdown.Option(subject_name) for subject_name in subjects]
+        if current_input and current_input in subjects:
+            self.subject_name.value = current_input
 
     def _load_alert_records(self):
         records = []
@@ -825,6 +853,7 @@ We appreciate your feedback and look forward to improving the experience for eve
             self.list_timetable.controls.remove(cont)
             self._update_class_filter_options(records)
             self._update_class_name_options(records)
+            self._update_subject_options(records)
 
             try:
                 from flet_alarm import FletAlarm
@@ -852,6 +881,7 @@ We appreciate your feedback and look forward to improving the experience for eve
             self._refresh_id_counter(records)
             self._update_class_filter_options(records)
             self._update_class_name_options(records)
+            self._update_subject_options(records)
 
             if records:
                 normalized = False
